@@ -133,13 +133,39 @@ def call_groq(system_prompt, user_prompt, model="llama-3.3-70b-versatile"):
     return resp.choices[0].message.content
 
 def make_pdf_bytes(text: str) -> bytes:
+    """
+    Unicode-safe PDF export using fpdf2 + DejaVu font.
+    Works on Streamlit Cloud.
+    """
+    # Download a Unicode font at runtime (cached in session)
+    # Streamlit Cloud doesn't ship fonts by default.
+    import os
+    import urllib.request
+    from pathlib import Path
+
+    font_dir = Path(".fonts")
+    font_dir.mkdir(exist_ok=True)
+    font_path = font_dir / "DejaVuSans.ttf"
+
+    if not font_path.exists():
+        url = "https://github.com/dejavu-fonts/dejavu-fonts/raw/master/ttf/DejaVuSans.ttf"
+        urllib.request.urlretrieve(url, font_path)
+
     pdf = FPDF()
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=12)
-    pdf.set_font("Arial", size=12)
-    for line in text.splitlines():
-        pdf.multi_cell(0, 6, line)
-    return pdf.output(dest="S").encode("latin-1", errors="ignore")
+
+    pdf.add_font("DejaVu", "", str(font_path), uni=True)
+    pdf.set_font("DejaVu", size=12)
+
+    # Normalize line endings
+    for line in text.replace("\r\n", "\n").split("\n"):
+        pdf.multi_cell(0, 7, line)
+
+    # fpdf2 returns bytes when dest="S" in newer versions,
+    # but to be safe:
+    out = pdf.output(dest="S")
+    return out if isinstance(out, (bytes, bytearray)) else out.encode("latin-1", "ignore")
 
 # ---------------------------
 # Session State
