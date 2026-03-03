@@ -1,5 +1,4 @@
 import streamlit as st
-import os
 import re
 import faiss
 import numpy as np
@@ -20,6 +19,15 @@ st.title("📚 AI Study Assistant (RAG)")
 st.write("Upload your study materials and ask questions about them.")
 
 # ---------------------------
+# Load GROQ API Key from Secrets
+# ---------------------------
+if "GROQ_API_KEY" not in st.secrets:
+    st.error("⚠️ GROQ_API_KEY not found in Streamlit Secrets.")
+    st.stop()
+
+groq_api_key = st.secrets["GROQ_API_KEY"]
+
+# ---------------------------
 # Education Level Setting
 # ---------------------------
 education_level = st.selectbox(
@@ -34,8 +42,6 @@ education_level = st.selectbox(
     ],
     index=3
 )
-
-groq_api_key = st.text_input("Enter GROQ API Key", type="password")
 
 # ---------------------------
 # File Upload
@@ -112,15 +118,14 @@ def build_faiss_index(chunks):
     index = faiss.IndexFlatIP(embeddings.shape[1])
     index.add(embeddings)
 
-    return index, embeddings
+    return index
 
 def retrieve(query, index, chunks, k=6):
     model = load_embedding_model()
     q_emb = model.encode([query], normalize_embeddings=True)
     q_emb = np.array(q_emb).astype("float32")
     D, I = index.search(q_emb, k)
-    results = [chunks[i] for i in I[0] if i < len(chunks)]
-    return results
+    return [chunks[i] for i in I[0] if i < len(chunks)]
 
 def call_groq(system_prompt, user_prompt):
     client = Groq(api_key=groq_api_key)
@@ -159,7 +164,7 @@ if st.button("🔧 Build Knowledge Base"):
         if not all_chunks:
             st.error("No readable content found.")
         else:
-            index, embeddings = build_faiss_index(all_chunks)
+            index = build_faiss_index(all_chunks)
             st.session_state["index"] = index
             st.session_state["chunks"] = all_chunks
             st.success("Knowledge Base Ready ✅")
@@ -173,8 +178,6 @@ question = st.text_input("Ask a Question About Your Study Material")
 if st.button("💬 Ask Question"):
     if "index" not in st.session_state:
         st.warning("Build Knowledge Base first.")
-    elif not groq_api_key:
-        st.warning("Enter GROQ API key.")
     elif not question.strip():
         st.warning("Enter a question.")
     else:
@@ -191,10 +194,9 @@ You are an AI Study Assistant.
 
 IMPORTANT RULES:
 - Only answer using the provided context.
-- If answer is not found, say it clearly.
-- Adapt explanation to this education level: {education_level}.
-- Keep explanations clear and structured.
-- After answering, provide a short 8-10 line summary.
+- If answer is not found, say clearly.
+- Adapt explanation to: {education_level}.
+- Provide a short summary at the end.
 """
 
         user_prompt = f"""
@@ -211,7 +213,6 @@ CONTEXT:
         st.subheader("📘 Answer")
         st.write(answer)
 
-        st.subheader("⬇ Download Summary")
         st.download_button(
             "Download as Markdown",
             answer,
